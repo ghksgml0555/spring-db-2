@@ -6,8 +6,13 @@ import hello.itemservice.repository.ItemSearchCond;
 import hello.itemservice.repository.ItemUpdateDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.BeanPropertySqlParameterSource;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.util.StringUtils;
@@ -16,35 +21,39 @@ import javax.sql.DataSource;
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
- * JdbcTemplate
+ * NamedParameterJdbcTemplate
+ * SqlParameterSource
+ * - BeanPropertySqlParameterSource
+ * - MapSqlParameterSource
+ * Map
+ *
+ * BeanPropertyRowMapper
+ *
  */
 @Slf4j
-public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
+public class JdbcTemplateItemRepositoryV2 implements ItemRepository {
 
-    private final JdbcTemplate template;
+    //private final JdbcTemplate template;
+    private final NamedParameterJdbcTemplate template;
 
-    public JdbcTemplateItemRepositoryV1(DataSource dataSource){
-        //JdbcTemplate은 dataSource가 필요하다
-        this.template = new JdbcTemplate(dataSource);
+    public JdbcTemplateItemRepositoryV2(DataSource dataSource){
+        this.template = new NamedParameterJdbcTemplate(dataSource);
     }
 
 
     @Override
     public Item save(Item item) {
-        String sql = "insert into item(item_name, price, quantity) values (?,?,?)";
-        //jdbctemplate사용시 db에서 생성해준 id값 가져오는 방법 >그냥이렇게 쓰는구나 라고 이해(깊이있게학습안해도된다)
+        String sql = "insert into item(item_name, price, quantity)"+
+                "values (:itemName,:price,:quantity)";
+
+        SqlParameterSource param = new BeanPropertySqlParameterSource(item);
+
         KeyHolder keyHolder = new GeneratedKeyHolder();
-        template.update(connection -> {
-            //자동 증가 키
-            PreparedStatement ps = connection.prepareStatement(sql, new String[]{"id"});
-            ps.setString(1, item.getItemName());
-            ps.setInt(2, item.getPrice());
-            ps.setInt(3,item.getQuantity());
-            return ps;
-        }, keyHolder);
+        template.update(sql, param, keyHolder);
 
         long key = keyHolder.getKey().longValue();
         item.setId(key);
@@ -53,19 +62,24 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
 
     @Override
     public void update(Long itemId, ItemUpdateDto updateParam) {
-        String sql = "update item set item_name=?, price=?, quantity=? where id=?";
-        template.update(sql,
-                updateParam.getItemName(),
-                updateParam.getPrice(),
-                updateParam.getQuantity(),
-                itemId);
+        String sql = "update item " +
+                "set item_name=:itemName, price=:price, quantity=:quantity where id=:id";
+
+        SqlParameterSource param = new MapSqlParameterSource()
+                .addValue("itemName", updateParam.getItemName())
+                .addValue("price", updateParam.getPrice())
+                .addValue("quantity", updateParam.getQuantity())
+                .addValue("id", itemId);
+
+        template.update(sql, param);
     }
 
     @Override
     public Optional<Item> findById(Long id) {
-        String sql = "select id, item_name, price, quantity from Item where id = ?";
+        String sql = "select id, item_name, price, quantity from Item where id = :id";
         try{
-            Item item = template.queryForObject(sql, itemRowMapper(), id);
+            Map<String, Object> param = Map.of("id",id);
+            Item item = template.queryForObject(sql, param ,itemRowMapper());
             return Optional.of(item); //of를 하면 널이면 안된다. ofNullable로 주면 널일수있다
         }catch (EmptyResultDataAccessException e) {//queryForObject는 결과가 null이면 해당예외 터짐
             return Optional.empty();
@@ -73,14 +87,16 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
     }
 
     private RowMapper<Item> itemRowMapper() {
-        return ((rs, rowNum) -> {
+        //스프링에서 제공. 리절트 셑으로 Item의 필드명으로 다 넣어줌
+        return BeanPropertyRowMapper.newInstance(Item.class);
+        /*return ((rs, rowNum) -> {
             Item item = new Item();
             item.setId(rs.getLong("id"));
             item.setItemName(rs.getString("item_Name"));
             item.setPrice(rs.getInt("price"));
             item.setQuantity(rs.getInt("quantity"));
             return item;
-        });
+        });*/
     }
 
     @Override
@@ -88,28 +104,26 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
         String itemName = cond.getItemName();
         Integer maxPrice = cond.getMaxPrice();
 
+        SqlParameterSource param = new BeanPropertySqlParameterSource(cond);
+
         String sql = "select id, item_name, price, quantity from item";
         //동적 쿼리 > 이부분은 각 조건에 따라 sql문이 바뀌는거로 일단 이해
         if (StringUtils.hasText(itemName) || maxPrice != null) {
             sql += " where";
         }
         boolean andFlag = false;
-        List<Object> param = new ArrayList<>();
         if (StringUtils.hasText(itemName)) {
-            sql += " item_name like concat('%',?,'%')";
-            param.add(itemName);
+            sql += " item_name like concat('%',:itemName,'%')";
             andFlag = true;
         }
         if (maxPrice != null) {
             if (andFlag) {
                 sql += " and";
             }
-            sql += " price <= ?";
-            param.add(maxPrice);
+            sql += " price <= :maxPrice";
         }
         log.info("sql={}", sql);
-        //queryForObject()는 하나 가지고올때 query()는 리스트같은거 가지고올때
-        return template.query(sql, itemRowMapper(), param.toArray()); //파라미터 있으면 맨뒤에 파라미터
+        return template.query(sql, param, itemRowMapper()); //파라미터 있으면 맨뒤에 파라미터
 
     }
 }

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--namespace로 전에 만든 인터페이스를 지정해주면 연동된다.-->
+<mapper namespace="hello.itemservice.repository.mybatis.ItemMapper">
+    <insert id="save" useGeneratedKeys="true" keyProperty="id">
+        insert into item (item_name, price, quantity)
+        <!--인터페이스의 save함수를 보면 item객체를 받는데 그 객체의 각 필드를 겟으로 꺼내옴  -->
+        values (#{itemName}, #{price}, #{quantity})
+    </insert>
+    <update id="update">
+        update item
+        <!-- 인터페이스의 update함수를 보면 파라미터 2개라서 각 이름을 지정해줬고 그걸로 하면된다-->
+        set item_name=#{updateParam.itemName},
+        price=#{updateParam.price},
+        quantity=#{updateParam.quantity}
+        where id = #{id}
+    </update>
+    <!--원래 resultType은 xml에서 뭘 알수가 없어서 패키지명을 다적어 줘야한다(Item이면
+     hello.itemservice.domain > 설정에서 안해도되게바꿨다-->
+    <select id="findById" resultType="Item">
+        select id, item_name, price, quantity
+        from item
+        where id = #{id}
+    </select>
+    <select id="findAll" resultType="Item">
+        select id, item_name, price, quantity
+        from item
+        <!--where도 동적으로 들어간다(아무조건이 없으면 where가 없어야한다) -->
+        <where>
+            <if test="itemName != null and itemName != ''">
+                and item_name like concat('%',#{itemName},'%')
+            </if>
+            <if test="maxPrice != null">
+                and price &lt;= #{maxPrice}
+            </if>
+        </where>
+    </select>
+</mapper>

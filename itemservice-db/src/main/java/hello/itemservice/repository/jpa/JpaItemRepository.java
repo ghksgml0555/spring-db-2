@@ -39,7 +39,7 @@ public class JpaItemRepository implements ItemRepository {
         findItem.setItemName(updateParam.getItemName());
         findItem.setPrice(updateParam.getPrice());
         findItem.setQuantity(updateParam.getQuantity());
-        //이렇게만해두고 따로 저장을 안해도 실제 db에 update쿼리가 나간다.
+        //jpa는 이렇게만해두고 따로 저장을 안해도 실제 db에 update쿼리가 나간다.
     }
 
     @Override

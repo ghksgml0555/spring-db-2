@@ -30,6 +30,7 @@ public class MemberService {
     }
 
     //JoinV1과 같지만 로그저장에 실패해서 회원가입이 롤백되는 경우를 막음
+    @Transactional
     public void JoinV2(String username){
         Member member = new Member(username);
         Log logMessage = new Log(username);
